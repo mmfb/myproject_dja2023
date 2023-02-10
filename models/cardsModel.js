@@ -35,6 +35,113 @@ class Card {
             return { status: 500, result: err };
         }
     }
+
+    static async filterByType(typeId) {
+        try {
+            let result = [];
+            let [dbCards, fields] =
+                await pool.query("Select * from cards where crd_type=?", [typeId]);
+            for (let dbCard of dbCards) {
+                result.push(cardFromDB(dbCard));
+            }
+            return { status: 200, result: result };
+        } catch (err) {
+            console.log(err);
+            return { status: 500, result: err };
+        }
+    }
+
+    static async filterByLoreOrDescription(text) {
+        try {
+            let result = [];
+            let sql;
+            let params = [];
+            if (Array.isArray(text)) {
+                sql =`Select * from cards where REGEXP_LIKE(crd_description,?) 
+                    or REGEXP_LIKE(crd_lore,?)`;
+                let regexp = text.join('|'); 
+                params = [regexp,regexp];
+            } else {
+               sql = `Select * from cards where crd_description LIKE ? 
+                      or crd_lore LIKE ?`;
+               params = ['%'+text+'%','%'+text+'%'];
+            }
+            let [dbCards] = await pool.query(sql,params);
+            for (let dbCard of dbCards) {
+                result.push(cardFromDB(dbCard));
+            }
+            return { status: 200, result: result };
+        } catch (err) {
+            console.log(err);
+            return { status: 500, result: err };
+        }
+    }
+
+    static async save(newCard) {
+        try {
+            let [dbCards, fields] =
+                await pool.query("Select * from cards where crd_name=?", [newCard.name]);
+            if (dbCards.length)
+                return {
+                    status: 400, result: [{
+                        location: "body", param: "name",
+                        msg: "That name already exists"
+                    }]
+                };
+            let [result] =
+                await pool.query(`Insert into cards (crd_name, crd_img_url, crd_lore, 
+                crd_description, crd_level, crd_cost, crd_timeout, crd_max_usage, crd_type)
+                values (?,?,?,?,?,?,?,?,?)`, [newCard.name, newCard.url, newCard.lore,
+                newCard.description, newCard.level, newCard.cost, newCard.timeout,
+                newCard.maxUsage, newCard.type]);
+            return { status: 200, result: result };
+        } catch (err) {
+            console.log(err);
+            return { status: 500, result: err };
+        }
+    }   
+
+    static async edit(newInfo) {
+        try {
+            // Checking if card exist to edit the card
+            let [dbCards] =
+                await pool.query("Select * from cards where crd_id=?",
+                    [newInfo.id]);
+            if (dbCards.length == 0) {
+                return {
+                    status: 404, result: {
+                        msg: "No card found with that ID"
+                    }
+                };
+            };
+
+            // Checking if the new name does not exist (excludes the card
+            // we are editing since we might not want to change the name )
+            [dbCards] =
+                await pool.query("Select * from cards where crd_name=? and crd_id!=?",
+                    [newInfo.name, newInfo.id]);
+            if (dbCards.length)
+                return {
+                    status: 400, result: [{
+                        location: "body", param: "name",
+                        msg: "Another card already has that name"
+                    }]
+                };
+            // We are considering all values will be changing
+            let [result] =
+                await pool.query(`update cards 
+                set crd_name=?, crd_img_url=?, crd_lore=?, 
+                crd_description=?, crd_level=?, crd_cost=?, crd_timeout=?, 
+                crd_max_usage=?, crd_type=? where crd_id=?`, [newInfo.name, newInfo.url, newInfo.lore,
+                newInfo.description, newInfo.level, newInfo.cost, newInfo.timeout,
+                newInfo.maxUsage, newInfo.type, newInfo.id]);
+            return { status: 200, result:{msg:"Card edited" }}
+        } catch (err) {
+            console.log(err);
+            return { status: 500, result: err };
+        }
+    }
+
 }
 
 module.exports = Card;
